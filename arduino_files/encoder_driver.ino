@@ -16,10 +16,10 @@ volatile long right_prevT_i = 0;
 float readEncoder(int i) {
   float left_vel=0;
   float right_vel=0;
-  ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
+  noInterrupts();
   left_vel = left_velocity_i;
   right_vel = right_velocity_i;
-  }
+  interrupts();
   if (i == LEFT) return left_vel;
   else if(i == RIGHT) return right_vel;
 }
@@ -41,7 +41,7 @@ void resetEncoders() {
   resetEncoder(RIGHT);
 }
 
-void interruptLeftEncoder(){
+void ICACHE_RAM_ATTR interruptLeftEncoder(){
  // Read encoder B when ENCA rises
  int b = digitalRead(LEFT_ENC_PIN_B);
  int increment = 0;
@@ -61,7 +61,7 @@ void interruptLeftEncoder(){
  left_prevT_i = currT;
 }
 
-void interruptRightEncoder(){
+void ICACHE_RAM_ATTR interruptRightEncoder(){
  // Read encoder B when ENCA rises
  int b = digitalRead(RIGHT_ENC_PIN_B);
  int increment = 0;

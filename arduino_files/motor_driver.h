@@ -2,12 +2,12 @@
    Motor driver function definitions - by James Nugen
    *************************************************************/
 
-#define RIGHT_MOTOR_BACKWARD 7
-#define LEFT_MOTOR_BACKWARD  8
-#define RIGHT_MOTOR_FORWARD  6
-#define LEFT_MOTOR_FORWARD   9
+#define RIGHT_MOTOR_BACKWARD D7
+#define LEFT_MOTOR_BACKWARD  D2
+#define RIGHT_MOTOR_FORWARD  D8
+#define LEFT_MOTOR_FORWARD   D3
 #define RIGHT_MOTOR_PWM 10
-#define LEFT_MOTOR_PWM 11
+#define LEFT_MOTOR_PWM D4
 
 void initMotorController();
 void setMotorSpeed(int i, int spd);

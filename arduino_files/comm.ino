@@ -1,76 +1,64 @@
-#include <util/atomic.h>
-#include "SerialTransfer.h"
-
-/* Serial port baud rate */
-#define BAUDRATE     57600
-
-/* Maximum PWM signal */
-#define MAX_PWM        255
-
+#include <math.h>
+#include <ESP8266WiFi.h>
+#include <ESP8266WiFiMulti.h>
+#include <ros.h>
+#include <geometry_msgs/Twist.h>
+#include <std_msgs/UInt8.h>
+// The min amount of PWM the motors need to move. Depends on the battery, motors and controller.
+//The max amount is defined by PWMRANGE in Arduino.h
+#define PWM_MIN 220
 #define RPM_SCALE 500
+#define MAX_PWM 255
 
-#if defined(ARDUINO) && ARDUINO >= 100
-#include "Arduino.h"
-#else
-#include "WProgram.h"
-#endif
-
-/* Include definition of serial commands */
-#include "commands.h"
-
-#include "motor_driver.h"
-
-/* Encoder driver function definitions */
-#include "encoder_driver.h"
-
-/* PID parameters and functions */
-#include "diff_controller.h"
-
-/* Run the PID loop at 30 times per second */
 #define PID_RATE           1000     // Hz
-/* Convert the rate into an interval */
 const int PID_INTERVAL = 1000 / PID_RATE;
-
-/* Track the next time we make a PID calculation */
 unsigned long nextPID = PID_INTERVAL;
-/* Stop the robot if it hasn't received a movement command
- in this number of milliseconds */
 #define AUTO_STOP_INTERVAL 10000
 long lastMotorCommand = AUTO_STOP_INTERVAL;
 
-SerialTransfer myTransfer;
+#include "commands.h"
+#include "motor_driver.h"
+/* Encoder driver function definitions */
+#include "encoder_driver.h"
+/* PID parameters and functions */
+#include "diff_controller.h"
 
-char arr[20];
-char success[30]="OK";
-char failure[30]="ER";
-char bd[30]="57600";
-char encRead[30];
-char motOut[30];
 
-// A pair of varibles to help parse serial commands (thanks Fergs)
-int arg = 0;
-int index = 0;
+// Declare functions
+void setupPins();
+void setupSerial();
+void setupWiFi();
+bool rosConnected();
+void onTwist(const geometry_msgs::Twist &msg);
+void ICACHE_RAM_ATTR interruptLeftEncoder();
+void ICACHE_RAM_ATTR interruptRightEncoder();
 
-// Variable to hold an input character
-char chr;
+#ifndef ACCESS_POINT_SSID
+ESP8266WiFiMulti wifi;
+#endif
 
-// Variable to hold the current single-character command
-char cmd;
+// ROS serial server
+IPAddress server(192, 168, 32, 109);
+ros::NodeHandle node;
+ros::Subscriber<geometry_msgs::Twist> sub("/omni_vel", &onTwist);
+bool _connected = false;
 
-// Character arrays to hold the first and second arguments
-char argv1[16];
-char argv2[16];
-char argv3[16];
-
-// The arguments converted to integers
-long arg1;
-long arg2;
-long arg3;
 
 void setup()
 {
-  Serial.begin(57600);
-  myTransfer.begin(Serial);
+  setupPins();
+  setupSerial();
+  setupWiFi();
+
+  // Connect to rosserial socket server and init node. (Using default port of 11411)
+  Serial.printf("Connecting to ROS serial server at %s\n", server.toString().c_str());
+  node.getHardware()->setConnection(server);
+  node.initNode();
+  node.subscribe(sub);
+}
+
+void setupPins()
+{
   attachInterrupt(digitalPinToInterrupt(LEFT_ENC_PIN_A),
                   interruptLeftEncoder,RISING);
   attachInterrupt(digitalPinToInterrupt(RIGHT_ENC_PIN_A),
@@ -86,65 +74,72 @@ void setup()
   pinMode(RIGHT_MOTOR_BACKWARD,OUTPUT);
   pinMode(LEFT_MOTOR_FORWARD,OUTPUT);
   pinMode(RIGHT_MOTOR_FORWARD,OUTPUT);
+  stop();
+
+delay(2000);
 }
 
-int count(int x)
+void setupSerial()
 {
-  int c=0;
-  while(x)
+  Serial.begin(57600);
+  Serial.println();
+}
+
+void setupWiFi()
+{
+#ifdef ACCESS_POINT_SSID
+
+  WiFi.disconnect();
+  Serial.println("Creating Wifi network");
+  if (WiFi.softAP(ACCESS_POINT_SSID))
   {
-    c++;
-    x/=10;
+    Serial.println("Wifi network created");
+    Serial.print("SSID: ");
+    Serial.println(WiFi.softAPSSID());
+    Serial.print("IP:   ");
+    Serial.println(WiFi.softAPIP());
   }
-  return c;
-}
 
-void sendSuccess()
-{
-    uint16_t sendSize = 0;
-    sendSize = myTransfer.txObj(success, sendSize);
-    myTransfer.sendData(sendSize);
-}
+#else
 
-void sendFailure()
-{
-    uint16_t sendSize = 0;
-    sendSize = myTransfer.txObj(failure, sendSize);
-    myTransfer.sendData(sendSize);
-}
+  WiFi.softAPdisconnect();
+  WiFi.disconnect();
+  WiFi.mode(WIFI_STA);
+  wifi.addAP("ASUS_X00RD", "Golu-Molu");
 
-void sendBaud()
-{
-    uint16_t sendSize = 0;
-    sendSize = myTransfer.txObj(bd, sendSize);
-    myTransfer.sendData(sendSize);
-}
-
-int runCommand(){
-  int i = 0;
-  char *p = argv1;
-  char *str;
-  int pid_args[4];
-  arg1 = atoi(argv1);
-  arg2 = atoi(argv2);
-  arg3 = atoi(argv3);
-
-  if(cmd=='b')
+  Serial.println("Connecting to Wifi");
+  while (wifi.run() != WL_CONNECTED)
   {
-    sendBaud();
+    delay(500);
+    Serial.print(".");
   }
-  else if(cmd=='r')
+
+  Serial.println("\nWiFi connected");
+  Serial.print("SSID: ");
+  Serial.println(WiFi.SSID());
+  Serial.print("IP:   ");
+  Serial.println(WiFi.localIP());
+
+#endif
+}
+
+void stop()
+{
+  setMotorSpeeds(0, 0);
+}
+
+void onTwist(const geometry_msgs::Twist &msg)
+{
+  if (!_connected)
   {
-      resetPID();
-      kp = arg1;
-      ki = arg2;
-      kd = arg3;
-      sendSuccess();
+    stop();
+    return;
   }
-  else if(cmd=='m')
-  {
-    /* Reset the auto stop timer */
-    lastMotorCommand = millis();
+
+  float arg1 = msg.linear.x;
+  float arg2 = msg.linear.y;
+
+  lastMotorCommand = millis();
     if (arg1 == 0 && arg2 == 0) {
       setMotorSpeeds(0, 0);
       resetPID();
@@ -160,103 +155,39 @@ int runCommand(){
     rightPID.TargetVelocity = arg2;
     leftPID.PrevT = micros();
     rightPID.PrevT = micros();
-    sendSuccess();
-  }
-  else if(cmd=='o')
-  {
-    /* Reset the auto stop timer */
-    lastMotorCommand = millis();
-    resetPID();
-    moving = 0; // Sneaky way to temporarily disable the PID
-    setMotorSpeeds(arg1, arg2);
-    sendSuccess();
-  }
-  else
-  {
-    sendFailure();
-  }
-}
-
-
-/* Clear the current command parameters */
-void resetCommand() {
-  cmd = NULL;
-  memset(argv1, 0, sizeof(argv1));
-  memset(argv2, 0, sizeof(argv2));
-  memset(argv3, 0, sizeof(argv3));
-  arg1 = 0;
-  arg2 = 0;
-  arg3 = 0;
-  arg = 0;
-  index = 0;
+    Serial.print(arg1);
+    Serial.print(" ");
+    Serial.println(arg2);
 }
 
 void loop()
-{ 
-  if(myTransfer.available())
-  {
-    uint16_t recSize = 0;
-    uint16_t sendSize = 0;
+{
+  if (!rosConnected())
+    stop();
     
-    recSize = myTransfer.rxObj(arr, recSize);
-    for(int i=0; i < 20; i++)
-    {
-       char chr = arr[i];
-       if (chr == 13) {
-        if (arg == 1) argv1[index] = NULL;
-        else if (arg == 2) argv2[index] = NULL;
-        else if(arg == 3) argv3[index] = NULL;
-          runCommand();
-          resetCommand();
-       }
-      // Use spaces to delimit parts of the command
-      else if (chr == ' ') {
-        // Step through the arguments
-        if (arg == 0) arg = 1;
-        else if (arg == 1)  {
-          argv1[index] = NULL;
-          arg = 2;
-          index = 0;
-        }
-        else if (arg == 2) {
-          argv2[index] = NULL;
-          arg = 3;
-          index = 0;
-        }
-        continue;
-      }
-      else {
-        if (arg == 0) {
-          // The first arg is the single-letter command
-          cmd = chr;
-        }
-        else if (arg == 1) {
-          // Subsequent arguments can be more than one character
-          argv1[index] = chr;
-          index++;
-        }
-        else if (arg == 2) {
-          argv2[index] = chr;
-          index++;
-        }
-        else if (arg == 3) {
-          argv3[index] = chr;
-          index++;
-        }
-      }
-    }
-  }
-
-if (millis() > nextPID) {
+  if (millis() > nextPID) {
   updatePID();
   nextPID += PID_INTERVAL;
+  }
+
+  // Check to see if we have exceeded the auto-stop interval
+  if ((millis() - lastMotorCommand) > AUTO_STOP_INTERVAL) {;
+    setMotorSpeeds(0, 0);
+    moving = 0;
+    resetPID();
+  }
+  delay(1000/30);
+  node.spinOnce();
 }
 
-// Check to see if we have exceeded the auto-stop interval
-if ((millis() - lastMotorCommand) > AUTO_STOP_INTERVAL) {;
-  setMotorSpeeds(0, 0);
-  moving = 0;
-  resetPID();
-}
-  delay(1000/30);
+bool rosConnected()
+{
+  // If value changes, notify via LED and console.
+  bool connected = node.connected();
+  if (_connected != connected)
+  {
+    _connected = connected;
+    Serial.println(connected ? "ROS connected" : "ROS disconnected");
+  }
+  return connected;
 }
