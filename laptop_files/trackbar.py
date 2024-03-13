@@ -5,9 +5,6 @@ import cv2
 import numpy as np
 from geometry_msgs.msg import Twist
 
-def nothing(x):
-    pass
-
 rospy.init_node("trackbar_speed")
 vel_pub = rospy.Publisher('omni_vel', Twist, queue_size=10)
 vel = Twist()
