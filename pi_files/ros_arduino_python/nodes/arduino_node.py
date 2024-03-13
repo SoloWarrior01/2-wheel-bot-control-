@@ -48,9 +48,6 @@ class ArduinoROS():
 
         # Start polling the sensors and base controller
         while not rospy.is_shutdown():
-            # msg=self.controller.get_encoder_counts()
-            # print(msg)
-            
             r.sleep()
 
     

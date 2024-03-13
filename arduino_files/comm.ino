@@ -120,20 +120,6 @@ void sendBaud()
     myTransfer.sendData(sendSize);
 }
 
-void sendEncoder()
-{
-    uint16_t sendSize = 0;
-    sendSize = myTransfer.txObj(encRead, sendSize);
-    myTransfer.sendData(sendSize);
-}
-
-void sendOutput()
-{
-    uint16_t sendSize = 0;
-    sendSize = myTransfer.txObj(motOut, sendSize);
-    myTransfer.sendData(sendSize);
-}
-
 int runCommand(){
   int i = 0;
   char *p = argv1;
@@ -146,34 +132,6 @@ int runCommand(){
   if(cmd=='b')
   {
     sendBaud();
-  }
-  else if(cmd=='e')
-  {
-    int encLeft = readEncoder(LEFT);
-    int count_left = count(encLeft);
-    int encRight = readEncoder(RIGHT);
-    int count_right = count(encRight);
-    char leftRead[10], rightRead[10];
-    if(encLeft==0)
-    {
-      leftRead[0]='0';
-      count_left=1;
-    }
-    else
-      sprintf(leftRead,"%d", encLeft);
-    if(encRight==0)
-    {
-      rightRead[0]='0';
-      count_right=1;
-    }
-    else
-      sprintf(rightRead,"%d", encRight);
-    for(int i=0;i<count_left;i++)
-      encRead[i] = leftRead[i];
-    encRead[count_left]=' ';
-    for(int i=0;i<count_right;i++)
-      encRead[i+count_left+1] = rightRead[i];
-    sendEncoder();
   }
   else if(cmd=='r')
   {
@@ -202,44 +160,6 @@ int runCommand(){
     rightPID.TargetVelocity = arg2;
     leftPID.PrevT = micros();
     rightPID.PrevT = micros();
-
-    // int outLeft = leftPID.output;
-    // int count_left = count(outLeft);
-    // int outRight = rightPID.output;
-    // int count_right = count(outRight);
-    // int outBack = backPID.output;
-    // int count_back = count(outBack);
-    // char leftOut[10], rightOut[10], backOut[10];
-    // if(outLeft==0)
-    // {
-    //   leftOut[0]='0';
-    //   count_left=1;
-    // }
-    // else
-    //   sprintf(leftOut,"%d", outLeft);
-    // if(outRight==0)
-    // {
-    //   rightOut[0]='0';
-    //   count_right=1;
-    // }
-    // else
-    //   sprintf(rightOut,"%d", outRight);
-    // if(outBack==0)
-    // {
-    //   backOut[0]='0';
-    //   count_back=1;
-    // }
-    // else
-    //   sprintf(backOut,"%d", outBack);
-    // for(int i=0;i<count_left;i++)
-    //   motOut[i] = leftOut[i];
-    // motOut[count_left]=' ';
-    // for(int i=0;i<count_right;i++)
-    //   motOut[i+count_left+1] = rightOut[i];
-    // motOut[count_left+count_right+1]=' ';
-    // for(int i=0;i<count_back;i++)
-    //   motOut[i+count_left+1+count_right+1] = backOut[i];
-    // sendOutput();
     sendSuccess();
   }
   else if(cmd=='o')
